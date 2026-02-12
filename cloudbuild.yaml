@@ -1,11 +1,13 @@
 steps:
   - name: "gcr.io/cloud-builders/docker"
-  args:
-    - "build"
-    - "--no-cache"
-    - "-t"
-    - "gcr.io/$PROJECT_ID/telegram-bot:$COMMIT_SHA"
-    - "."
+    args:
+      - "build"
+      - "--no-cache"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/telegram-bot:$COMMIT_SHA"
+      - "-f"
+      - "Dockerfile"
+      - "."
 
   - name: "gcr.io/cloud-builders/docker"
     args:
@@ -26,6 +28,9 @@ steps:
       - "managed"
       - "--allow-unauthenticated"
       - "--set-env-vars"
-      - "APP_VERSION=$COMMIT_SHA,SUPERGROUP_ID=-1003363944827,SITE_URL=https://tbbassir.com.br"
+      - "APP_VERSION=$COMMIT_SHA,BOT_USERNAME=Suporte_ir_bot"
       - "--set-secrets"
       - "TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest"
+
+images:
+  - "gcr.io/$PROJECT_ID/telegram-bot:$COMMIT_SHA"
