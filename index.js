@@ -23,60 +23,62 @@ async function tg(method, body) {
   if (!data.ok) {
     console.error("Telegram error:", data);
   }
+
   return data;
 }
 
 app.get("/", (_, res) => {
-  res.status(200).send("BOT ONLINE ✅");
+  res.status(200).send("Bot online");
 });
 
 app.post("/webhook", async (req, res) => {
   try {
-    const msg = req.body?.message;
-    if (!msg || !msg.text) return res.sendStatus(200);
+    const message = req.body.message;
+    if (!message || !message.text) {
+      return res.sendStatus(200);
+    }
 
-    const chatId = msg.chat.id;
-    const text = msg.text.trim().toLowerCase();
+    const chatId = message.chat.id;
+    const text = message.text.trim().toLowerCase();
 
+    // =========================
+    // COMANDO TUTORIAL
+    // =========================
     if (text === "/tutorial" || text === "tutorial") {
 
-      // TEXTO PRINCIPAL
+      const tutorialMessage = `
+🎓 CENTRAL DE TUTORIAIS TB-BASS IR (PC)
+
+📌 Instalação do M-Effects + Importar IR (PC) TANK-B:
+https://youtu.be/bKM6qGswkdw
+
+📌 Instalação do Cube Suite (PC) CUBEBABY:
+https://youtu.be/o-BfRDqeFhs
+
+📌 Como importar IR pela DAW REAPER:
+https://youtube.com/shorts/M37welAi-CI?si=pOU3GhKIWnv8_fp1
+
+📌 Tutorial instalação app celular TANK-B:
+https://youtu.be/RkVB4FQm0Nw
+
+Digite TUTORIAL sempre que precisar rever.
+`;
+
       await tg("sendMessage", {
         chat_id: chatId,
-        text:
-`🎓 CENTRAL DE TUTORIAIS TB-BASS IR (PC)
-
-Instalação do M-Effects + Importar IR (PC) TANK-B entre outras pedaleiras
-
-Instalação do Cube Suite (PC) apenas para as pedaleiras CUBEBABY tanto como pedaleira de baixo e guitarra
-
-Como importar IR pela DAW REAPER
-
-Tutorial de instalação do app pra celular TANK-B entre outras pedaleiras
-
-Digite TUTORIAL sempre que precisar rever.`
+        text: tutorialMessage,
       });
 
-      // ENVIA CADA LINK SEPARADO PARA GERAR PREVIEW
+      return res.sendStatus(200);
+    }
 
+    // =========================
+    // COMANDO START
+    // =========================
+    if (text === "/start") {
       await tg("sendMessage", {
         chat_id: chatId,
-        text: "https://youtu.be/bKM6qGswkdw"
-      });
-
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text: "https://youtu.be/o-BfRDqeFhs"
-      });
-
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text: "https://youtube.com/shorts/M37weIAi-CI?si=pOU3GhKIWnv8_fp1"
-      });
-
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text: "https://youtu.be/RkVB4FQm0Nw"
+        text: "✅ Bot online!\n\nUse /tutorial para acessar os tutoriais.",
       });
 
       return res.sendStatus(200);
@@ -84,13 +86,13 @@ Digite TUTORIAL sempre que precisar rever.`
 
     return res.sendStatus(200);
 
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error("Webhook error:", error);
     return res.sendStatus(200);
   }
 });
 
 const port = process.env.PORT || 8080;
 app.listen(port, () => {
-  console.log("Listening on port", port);
+  console.log("Servidor rodando na porta", port);
 });
