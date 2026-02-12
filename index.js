@@ -19,6 +19,9 @@ const APP_VERSION = process.env.APP_VERSION || "dev";
 // Supergrupo oficial (fixo)
 const SUPERGROUP_CHAT_ID = "-1003363944827";
 
+// 🔥 COLOQUE AQUI O SITE OFICIAL
+const SITE_URL = "https://tbbassir.com.br";
+
 async function tg(method, body) {
   const res = await fetch(`${API}/${method}`, {
     method: "POST",
@@ -62,7 +65,6 @@ function normalize(text) {
 }
 
 function normalizeCommand(text) {
-  // aceita: "/tutorial", "/tutorial@SeuBot", "tutorial"
   const t = normalize(text);
   if (!t) return "";
 
@@ -79,6 +81,27 @@ function isOfficialSupergroup(chat) {
   if (!chat) return false;
   if (chat.type !== "supergroup") return false;
   return String(chat.id) === String(SUPERGROUP_CHAT_ID);
+}
+
+async function sendMenu(chatId) {
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text: "Escolha uma opção:",
+    reply_markup: {
+      keyboard: [[{ text: "📦 Produtos" }, { text: "💬 Suporte" }]],
+      resize_keyboard: true,
+    },
+  });
+}
+
+async function sendProducts(chatId) {
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text:
+      `🌐 Site oficial:\n${SITE_URL}\n\n` +
+      `✅ Compre somente pelos canais oficiais.`,
+    disable_web_page_preview: false,
+  });
 }
 
 app.get("/", (_, res) => res.status(200).send("ok"));
@@ -99,7 +122,6 @@ app.post("/webhook", async (req, res) => {
     const text = normalize(textRaw);
     const cmd = normalizeCommand(text);
 
-    // log básico (pra debug no Cloud Run)
     console.log(
       JSON.stringify({
         event: "update",
@@ -111,7 +133,7 @@ app.post("/webhook", async (req, res) => {
       })
     );
 
-    // /chatid em qualquer lugar (pra conferir)
+    // /chatid (pra conferência)
     if (cmd === "/chatid") {
       await tg("sendMessage", {
         chat_id: chatId,
@@ -120,12 +142,11 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    const wantsTutorial =
-      cmd === "/tutorial" || cmd === "tutorial" || cmd === "/tutorial";
+    const wantsTutorial = cmd === "/tutorial" || cmd === "tutorial";
+    const isProductsText = cmd === "produtos" || text === "📦 Produtos";
 
-    // ===== SUPERGRUPOS =====
+    // ===== SUPERGRUPO =====
     if (chatType === "supergroup") {
-      // só funciona no supergrupo oficial
       if (isOfficialSupergroup(chat)) {
         if (wantsTutorial) {
           await tg("sendMessage", {
@@ -134,11 +155,9 @@ app.post("/webhook", async (req, res) => {
             disable_web_page_preview: false,
           });
         }
-        // qualquer outra msg no supergrupo: ignora (não poluir)
-        return res.sendStatus(200);
+        return res.sendStatus(200); // ignora o resto
       }
 
-      // se alguém tentar em outro supergrupo
       if (wantsTutorial) {
         await tg("sendMessage", {
           chat_id: chatId,
@@ -161,34 +180,52 @@ app.post("/webhook", async (req, res) => {
             "/menu\n\n" +
             "📌 Tutoriais: use /tutorial no supergrupo oficial.",
         });
-      } else if (cmd === "/ping") {
-        await tg("sendMessage", { chat_id: chatId, text: "pong 🟢" });
-      } else if (cmd === "/menu") {
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: "Escolha:",
-          reply_markup: {
-            keyboard: [[{ text: "📦 Produtos" }, { text: "💬 Suporte" }]],
-            resize_keyboard: true,
-          },
-        });
-      } else if (wantsTutorial) {
-        // no privado NÃO manda os links
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: "📌 Os tutoriais ficam no supergrupo oficial. Lá use /tutorial para ver a lista completa.",
-        });
-      } else {
-        // aqui você vai colocar suas respostas do privado depois
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: `Recebi: ${text || "(sem texto)"}\n\n(Em breve: respostas do privado / suporte)`,
-        });
+        return res.sendStatus(200);
       }
+
+      if (cmd === "/ping") {
+        await tg("sendMessage", { chat_id: chatId, text: "pong 🟢" });
+        return res.sendStatus(200);
+      }
+
+      if (cmd === "/menu") {
+        await sendMenu(chatId);
+        return res.sendStatus(200);
+      }
+
+      if (isProductsText) {
+        await sendProducts(chatId);
+        return res.sendStatus(200);
+      }
+
+      if (cmd === "💬 suporte" || text === "💬 Suporte" || cmd === "suporte") {
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text:
+            "💬 Suporte: me diga sua dúvida aqui no privado.\n\n" +
+            "Se precisar, envie print/vídeo e diga qual pedaleira está usando.",
+        });
+        return res.sendStatus(200);
+      }
+
+      if (wantsTutorial) {
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text:
+            "📌 Os tutoriais ficam no supergrupo oficial.\n" +
+            "Lá use /tutorial para ver a lista completa.",
+        });
+        return res.sendStatus(200);
+      }
+
+      // fallback privado
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: `Recebi: ${text || "(sem texto)"}\n\nDigite /menu para ver as opções.`,
+      });
       return res.sendStatus(200);
     }
 
-    // ===== OUTROS (grupo normal/canal) =====
     return res.sendStatus(200);
   } catch (e) {
     console.error("WEBHOOK_ERROR", e);
