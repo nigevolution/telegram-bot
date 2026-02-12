@@ -1,12 +1,14 @@
-{
-  "name": "telegram-bot",
-  "version": "1.0.0",
-  "main": "index.js",
-  "type": "commonjs",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "dependencies": {
-    "express": "^4.19.2"
-  }
-}
+FROM node:20-slim
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install --omit=dev
+
+COPY . .
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["npm", "start"]
