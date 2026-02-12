@@ -11,7 +11,6 @@ if (!TOKEN) {
 }
 
 const API = `https://api.telegram.org/bot${TOKEN}`;
-const ADMIN_ID = 123456789; // 🔴 COLOQUE SEU ID AQUI
 
 async function tg(method, body) {
   const res = await fetch(`${API}/${method}`, {
@@ -34,43 +33,58 @@ app.post("/webhook", async (req, res) => {
 
     const chatId = msg.chat.id;
     const chatType = msg.chat.type;
-    const text = msg.text.trim();
-    const userId = msg.from.id;
+    const text = msg.text.trim().toUpperCase();
 
-    // =============================
-    // 🔹 SE FOR GRUPO
-    // =============================
+    // =========================
+    // 🔹 GRUPO
+    // =========================
     if (chatType === "group" || chatType === "supergroup") {
 
-      // Só você pode postar tutorial
-      if (userId === ADMIN_ID && text.startsWith("/post ")) {
-        const tutorial = text.replace("/post ", "");
+      if (text === "TUTORIAL") {
 
         await tg("sendMessage", {
           chat_id: chatId,
-          text: `📚 Novo Tutorial:\n\n${tutorial}`
+          parse_mode: "HTML",
+          text: `
+🎓 <b>CENTRAL DE TUTORIAIS TB-BASS IR (PC)</b>
+
+🎸 <b>Instalação do M-Effects + Importar IR (PC) TANK-B</b>
+https://youtu.be/bKM6qGswkdw
+
+🎛 <b>Instalação do Cube Suite (PC) - CUBEBABY</b>
+https://youtu.be/o-BfRDqeFhs
+
+🎧 <b>Como importar IR pela DAW REAPER</b>
+https://youtube.com/shorts/M37weIAi-CI
+
+📱 <b>Instalação do app celular TANK-B</b>
+https://youtu.be/RkVB4FQm0Nw
+
+💡 Digite <b>TUTORIAL</b> sempre que precisar rever.
+          `
         });
+
       }
 
       return res.sendStatus(200);
     }
 
-    // =============================
-    // 🔹 SE FOR PRIVADO
-    // =============================
+    // =========================
+    // 🔹 PRIVADO
+    // =========================
     if (chatType === "private") {
 
-      if (text === "/start") {
+      if (text === "/START") {
         await tg("sendMessage", {
           chat_id: chatId,
-          text: "✅ Bem-vindo ao SUPORTE IR\n\nComandos:\n/start\n/menu"
+          text: "✅ SUPORTE TB-BASS IR\nDigite /menu"
         });
       }
 
-      else if (text === "/menu") {
+      if (text === "/MENU") {
         await tg("sendMessage", {
           chat_id: chatId,
-          text: "Escolha uma opção:",
+          text: "Escolha:",
           reply_markup: {
             keyboard: [
               [{ text: "📦 Produtos" }],
@@ -78,20 +92,6 @@ app.post("/webhook", async (req, res) => {
             ],
             resize_keyboard: true
           }
-        });
-      }
-
-      else if (text === "📦 Produtos") {
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: "🎸 Aqui estão nossos produtos:\n\nTB Bass IR Premium\nTB Bass IR Studio Pack"
-        });
-      }
-
-      else if (text === "💬 Suporte") {
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: "Nossa equipe responderá em breve."
         });
       }
     }
