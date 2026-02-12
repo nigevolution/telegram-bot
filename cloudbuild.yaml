@@ -1,3 +1,4 @@
+cat > cloudbuild.yaml <<'EOF'
 options:
   logging: CLOUD_LOGGING_ONLY
 
@@ -5,11 +6,8 @@ steps:
   - name: "gcr.io/cloud-builders/docker"
     args:
       - "build"
-      - "--no-cache"
       - "-t"
       - "gcr.io/$PROJECT_ID/telegram-bot:$COMMIT_SHA"
-      - "-f"
-      - "Dockerfile"
       - "."
 
   - name: "gcr.io/cloud-builders/docker"
@@ -18,7 +16,7 @@ steps:
       - "gcr.io/$PROJECT_ID/telegram-bot:$COMMIT_SHA"
 
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
-    entrypoint: gcloud
+    entrypoint: "gcloud"
     args:
       - "run"
       - "deploy"
@@ -30,10 +28,11 @@ steps:
       - "--platform"
       - "managed"
       - "--allow-unauthenticated"
-      - "--set-env-vars"
-      - "APP_VERSION=$COMMIT_SHA,BOT_USERNAME=Suporte_ir_bot"
       - "--set-secrets"
       - "TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest"
+      - "--set-env-vars"
+      - "SUPERGRUPO_ID=-1003363944827,SITE_URL=https://tbbassir.com.br,SUPORTE_URL=https://t.me/suporte_ir_bot"
 
 images:
   - "gcr.io/$PROJECT_ID/telegram-bot:$COMMIT_SHA"
+EOF
