@@ -33,61 +33,55 @@ app.get("/", (_, res) => {
 app.post("/webhook", async (req, res) => {
   try {
     const msg = req.body?.message;
-    if (!msg || !msg.text) {
-      return res.sendStatus(200);
-    }
+    if (!msg || !msg.text) return res.sendStatus(200);
 
     const chatId = msg.chat.id;
-    const chatType = msg.chat.type; // private, group, supergroup
     const text = msg.text.trim().toLowerCase();
 
-    // ===============================
-    // COMANDO TUTORIAL
-    // ===============================
     if (text === "/tutorial" || text === "tutorial") {
 
-      const tutorialMessage = `
-🎓 *CENTRAL DE TUTORIAIS TB-BASS IR (PC)*
+      // TEXTO PRINCIPAL
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text:
+`🎓 CENTRAL DE TUTORIAIS TB-BASS IR (PC)
 
-📌 Instalação do M-Effects + Importar IR (PC)  
-https://youtu.be/bKM6qGswkdw
+Instalação do M-Effects + Importar IR (PC) TANK-B entre outras pedaleiras
 
-📌 Instalação do Cube Suite (PC)  
-https://youtu.be/o-BfRDqeFhs
+Instalação do Cube Suite (PC) apenas para as pedaleiras CUBEBABY tanto como pedaleira de baixo e guitarra
 
-📌 Como importar IR pela DAW REAPER  
-https://youtube.com/shorts/M37weIAi-CI?si=pOU3GhKIWnv8_fp1
+Como importar IR pela DAW REAPER
 
-📌 Tutorial de instalação do app TANK-B (Celular)  
-https://youtu.be/RkVB4FQm0Nw
+Tutorial de instalação do app pra celular TANK-B entre outras pedaleiras
 
-Digite TUTORIAL sempre que precisar rever.
-`;
+Digite TUTORIAL sempre que precisar rever.`
+      });
+
+      // ENVIA CADA LINK SEPARADO PARA GERAR PREVIEW
 
       await tg("sendMessage", {
         chat_id: chatId,
-        text: tutorialMessage,
-        parse_mode: "Markdown"
+        text: "https://youtu.be/bKM6qGswkdw"
+      });
+
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: "https://youtu.be/o-BfRDqeFhs"
+      });
+
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: "https://youtube.com/shorts/M37weIAi-CI?si=pOU3GhKIWnv8_fp1"
+      });
+
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: "https://youtu.be/RkVB4FQm0Nw"
       });
 
       return res.sendStatus(200);
     }
 
-    // ===============================
-    // COMANDO START (SÓ PRIVADO)
-    // ===============================
-    if (text === "/start" && chatType === "private") {
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text: "✅ Bot online!\nUse /tutorial para ver os tutoriais."
-      });
-
-      return res.sendStatus(200);
-    }
-
-    // ===============================
-    // NÃO RESPONDER OUTROS TEXTOS
-    // ===============================
     return res.sendStatus(200);
 
   } catch (err) {
