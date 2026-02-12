@@ -1,5 +1,4 @@
 const express = require("express");
-
 const app = express();
 app.use(express.json());
 
@@ -9,26 +8,16 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-const BOT_USERNAME = (process.env.BOT_USERNAME || "Suporte_ir_bot").replace("@", "");
 const API = `https://api.telegram.org/bot${TOKEN}`;
 
-const APP_VERSION =
-  process.env.APP_VERSION ||
-  process.env.K_REVISION ||
-  process.env.COMMIT_SHA ||
-  "dev";
+const BOT_USERNAME = (process.env.BOT_USERNAME || "Suporte_ir_bot")
+  .replace("@", "")
+  .trim();
 
-const TUTORIAL_TEXT =
-  "📌 CENTRAL DE TUTORIAIS TB-BASS IR (PC)\n\n" +
-  "Instalação do M-Effects + Importar IR (PC) TANK-B entre outras pedaleiras\n" +
-  "https://youtu.be/bKM6qGswkdw\n\n" +
-  "Instalação do Cube Suite (PC) apenas para as pedaleiras CUBEBABY tanto como pedaleira de baixo e guitarra\n" +
-  "https://youtu.be/o-BfRDqeFhs\n\n" +
-  "Como importar IR pela DAW REAPER\n" +
-  "https://youtube.com/shorts/M37weIAi-CI?si=pOU3GhKIWnv8_fp1\n\n" +
-  "Tutorial de instalação do app pra celular TANK-B entre outras pedaleiras\n" +
-  "https://youtu.be/RkVB4FQm0Nw\n\n" +
-  "Digite TUTORIAL sempre que precisar rever.";
+const APP_VERSION = process.env.APP_VERSION || "dev";
+
+// Supergrupo oficial (fixo)
+const SUPERGROUP_CHAT_ID = "-1003363944827";
 
 async function tg(method, body) {
   const res = await fetch(`${API}/${method}`, {
@@ -36,192 +25,176 @@ async function tg(method, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-
   const data = await res.json();
   if (!data.ok) throw new Error(JSON.stringify(data));
   return data;
 }
 
-function normalizeText(text) {
+const TUTORIAL_TEXT =
+`📌 CENTRAL DE TUTORIAIS TB-BASS IR (PC)
+
+✅ Instalação do M-Effects + Importar IR (PC) TANK-B (entre outras pedaleiras)
+https://youtu.be/bKM6qGswkdw
+
+✅ Instalação do Cube Suite (PC) — pedaleiras CUBEBABY (baixo e guitarra)
+https://youtu.be/o-BfRDqeFhs
+
+✅ Como importar IR pela DAW REAPER
+https://youtube.com/shorts/M37welAi-CI?si=pOU3GhKIWnv8_fp1
+
+✅ Tutorial de instalação do app pra celular TANK-B (entre outras pedaleiras)
+https://youtu.be/RkVB4FQm0Nw
+
+Digite: /tutorial (ou "tutorial") sempre que precisar rever.`;
+
+function pickMessage(update) {
+  return (
+    update?.message ||
+    update?.edited_message ||
+    update?.channel_post ||
+    update?.edited_channel_post ||
+    null
+  );
+}
+
+function normalize(text) {
   return (text || "").trim();
 }
 
-function extractCommand(text) {
-  const t = normalizeText(text);
-  if (!t) return { raw: "", cmd: "", args: "" };
+function normalizeCommand(text) {
+  // aceita: "/tutorial", "/tutorial@SeuBot", "tutorial"
+  const t = normalize(text);
+  if (!t) return "";
 
-  const parts = t.split(/\s+/);
-  const first = parts[0];
-  const args = parts.slice(1).join(" ");
-
-  // Ex: "/tutorial@Suporte_ir_bot"
-  if (first.startsWith("/")) {
-    const base = first.split("@")[0].toLowerCase(); // "/tutorial"
-    return { raw: t, cmd: base, args };
+  if (t.startsWith("/")) {
+    const first = t.split(/\s+/)[0];
+    const cmd = first.split("@")[0];
+    return cmd.toLowerCase();
   }
 
-  return { raw: t, cmd: t.toLowerCase(), args: "" };
+  return t.toLowerCase();
 }
 
-function isGroupChat(chat) {
-  const type = chat?.type;
-  return type === "group" || type === "supergroup";
-}
-
-async function sendTutorial(chatId) {
-  await tg("sendMessage", {
-    chat_id: chatId,
-    text: TUTORIAL_TEXT,
-    disable_web_page_preview: false,
-  });
-}
-
-async function tellCallPrivate(chatId, replyToMessageId) {
-  const text =
-    `✅ Para suporte, me chame no privado: @${BOT_USERNAME}\n` +
-    `📌 No grupo eu envio apenas TUTORIAIS.\n` +
-    `Digite: tutorial (ou /tutorial)`;
-
-  await tg("sendMessage", {
-    chat_id: chatId,
-    text,
-    reply_to_message_id: replyToMessageId,
-  });
-}
-
-async function tryDMUser(userId, text) {
-  // Só funciona se o usuário já tiver aberto o bot (já deu /start no privado)
-  try {
-    await tg("sendMessage", { chat_id: userId, text });
-  } catch (_) {
-    // ignora (Telegram bloqueia se o user nunca iniciou o bot)
-  }
+function isOfficialSupergroup(chat) {
+  if (!chat) return false;
+  if (chat.type !== "supergroup") return false;
+  return String(chat.id) === String(SUPERGROUP_CHAT_ID);
 }
 
 app.get("/", (_, res) => res.status(200).send("ok"));
-app.get("/version", (_, res) => res.status(200).send(`ok - ${APP_VERSION}`));
-app.get("/webhook", (_, res) => res.status(200).send("ok (use POST)"));
+app.get("/health", (_, res) =>
+  res.status(200).json({ ok: true, version: APP_VERSION })
+);
 
 app.post("/webhook", async (req, res) => {
   try {
-    const update = req.body || {};
-
-    // Pode vir em message, edited_message, etc.
-    const msg = update.message || update.edited_message || update.channel_post || update.edited_channel_post;
+    const msg = pickMessage(req.body);
     if (!msg) return res.sendStatus(200);
 
-    const chatId = msg.chat?.id;
-    const chatType = msg.chat?.type;
-    const userId = msg.from?.id;
-    const messageId = msg.message_id;
+    const chat = msg.chat;
+    const chatId = chat?.id;
+    const chatType = chat?.type;
 
-    const text = msg.text ? normalizeText(msg.text) : "";
-    if (!text) return res.sendStatus(200);
+    const textRaw = msg?.text || msg?.caption || "";
+    const text = normalize(textRaw);
+    const cmd = normalizeCommand(text);
 
-    const { cmd } = extractCommand(text);
+    // log básico (pra debug no Cloud Run)
+    console.log(
+      JSON.stringify({
+        event: "update",
+        chat_id: chatId,
+        chat_type: chatType,
+        from_id: msg?.from?.id,
+        from_user: msg?.from?.username,
+        text: text?.slice(0, 200),
+      })
+    );
 
-    // Aceita: /tutorial, /tutorial@bot, "tutorial" (sem barra), "Tutorial" etc.
-    const isTutorial =
-      cmd === "/tutorial" ||
-      cmd === "tutorial" ||
-      cmd === "/tutoriais" ||
-      cmd === "tutoriais" ||
-      cmd === "/tutorial@".toLowerCase(); // redundante, só pra garantir
+    // /chatid em qualquer lugar (pra conferir)
+    if (cmd === "/chatid") {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: `📌 Chat ID: ${chatId}\nTipo: ${chatType}\nBot: @${BOT_USERNAME}\nVersão: ${APP_VERSION}`,
+      });
+      return res.sendStatus(200);
+    }
 
-    // Também aceita exatamente "TUTORIAL" do jeito que você usa
-    const isTutorialLoose = text.trim().toLowerCase() === "tutorial";
+    const wantsTutorial =
+      cmd === "/tutorial" || cmd === "tutorial" || cmd === "/tutorial";
 
-    const inGroup = isGroupChat(msg.chat);
-
-    // ======================
-    // GRUPO / SUPERGRUPO
-    // ======================
-    if (inGroup) {
-      // Só publica tutorial no grupo
-      if (isTutorial || isTutorialLoose) {
-        await sendTutorial(chatId);
-      } else {
-        // Não “polui” o grupo com outras respostas (mas orienta)
-        await tellCallPrivate(chatId, messageId);
-
-        // tenta mandar DM (se o user já iniciou o bot no privado)
-        if (userId) {
-          await tryDMUser(
-            userId,
-            "✅ Vi sua mensagem no grupo.\n" +
-              "Me diga aqui no privado qual é sua dúvida e eu te ajudo.\n\n" +
-              "📌 Para ver os tutoriais: digite /tutorial"
-          );
+    // ===== SUPERGRUPOS =====
+    if (chatType === "supergroup") {
+      // só funciona no supergrupo oficial
+      if (isOfficialSupergroup(chat)) {
+        if (wantsTutorial) {
+          await tg("sendMessage", {
+            chat_id: chatId,
+            text: TUTORIAL_TEXT,
+            disable_web_page_preview: false,
+          });
         }
+        // qualquer outra msg no supergrupo: ignora (não poluir)
+        return res.sendStatus(200);
       }
 
+      // se alguém tentar em outro supergrupo
+      if (wantsTutorial) {
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text: "⚠️ O comando /tutorial funciona apenas no supergrupo oficial do SUPORTE IR.",
+        });
+      }
       return res.sendStatus(200);
     }
 
-    // ======================
-    // PRIVADO
-    // ======================
-    // Comandos no privado
-    if (cmd === "/start") {
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text:
-          "✅ Bot online!\n\n" +
-          "Comandos:\n" +
-          "/start\n" +
-          "/ping\n" +
-          "/menu\n" +
-          "/tutorial",
-      });
+    // ===== PRIVADO =====
+    if (chatType === "private") {
+      if (cmd === "/start") {
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text:
+            "✅ Bot online!\n\n" +
+            "Comandos:\n" +
+            "/start\n" +
+            "/ping\n" +
+            "/menu\n\n" +
+            "📌 Tutoriais: use /tutorial no supergrupo oficial.",
+        });
+      } else if (cmd === "/ping") {
+        await tg("sendMessage", { chat_id: chatId, text: "pong 🟢" });
+      } else if (cmd === "/menu") {
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text: "Escolha:",
+          reply_markup: {
+            keyboard: [[{ text: "📦 Produtos" }, { text: "💬 Suporte" }]],
+            resize_keyboard: true,
+          },
+        });
+      } else if (wantsTutorial) {
+        // no privado NÃO manda os links
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text: "📌 Os tutoriais ficam no supergrupo oficial. Lá use /tutorial para ver a lista completa.",
+        });
+      } else {
+        // aqui você vai colocar suas respostas do privado depois
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text: `Recebi: ${text || "(sem texto)"}\n\n(Em breve: respostas do privado / suporte)`,
+        });
+      }
       return res.sendStatus(200);
     }
 
-    if (cmd === "/ping") {
-      await tg("sendMessage", { chat_id: chatId, text: "pong 🟢" });
-      return res.sendStatus(200);
-    }
-
-    if (cmd === "/menu") {
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text: "Escolha uma opção:",
-        reply_markup: {
-          keyboard: [[{ text: "📌 Tutorial" }], [{ text: "💬 Suporte" }]],
-          resize_keyboard: true,
-        },
-      });
-      return res.sendStatus(200);
-    }
-
-    if (cmd === "/tutorial" || cmd === "tutorial" || isTutorialLoose) {
-      await sendTutorial(chatId);
-      return res.sendStatus(200);
-    }
-
-    // Botões do teclado (privado)
-    if (text === "📌 Tutorial") {
-      await sendTutorial(chatId);
-      return res.sendStatus(200);
-    }
-
-    if (text === "💬 Suporte") {
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text:
-          "💬 Suporte: me diga sua dúvida aqui no privado.\n\n" +
-          "Se quiser ver os tutoriais: /tutorial",
-      });
-      return res.sendStatus(200);
-    }
-
-    // Fallback (privado): eco simples
-    await tg("sendMessage", { chat_id: chatId, text: `Recebi: ${text}` });
+    // ===== OUTROS (grupo normal/canal) =====
     return res.sendStatus(200);
   } catch (e) {
-    console.error("Webhook error:", e);
+    console.error("WEBHOOK_ERROR", e);
     return res.sendStatus(200);
   }
 });
 
 const port = process.env.PORT || 8080;
-app.listen(port, () => console.log("Listening on", port, "version:", APP_VERSION));
+app.listen(port, () => console.log("Listening on", port, "version", APP_VERSION));
