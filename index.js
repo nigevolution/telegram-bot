@@ -1,7 +1,6 @@
 const express = require("express");
-const fetch = require("node-fetch");
-
 const app = express();
+
 app.use(express.json());
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -12,30 +11,10 @@ if (!TOKEN) {
 
 const API = `https://api.telegram.org/bot${TOKEN}`;
 
-// ========================
-// TEXTO DO TUTORIAL
-// ========================
-const TUTORIAL_TEXT = `
-🎓 *CENTRAL DE TUTORIAIS TB-BASS IR (PC)*
+// MUITO IMPORTANTE: mude esse número quando fizer deploy
+// pra você ter certeza que está rodando o código novo.
+const BOT_VERSION = "v3-telegram-tutorial-links";
 
-📌 Instalação do M-Effects + Importar IR (PC) TANK-B  
-https://youtu.be/bKM6qGswkdw
-
-📌 Instalação do Cube Suite (PC) – CUBEBABY  
-https://youtu.be/o-BfRDqeFhs
-
-📌 Como importar IR pela DAW REAPER  
-https://youtube.com/shorts/M37weIAi-CI?si=pOU3GhKlWnv8_fp1
-
-📌 Tutorial de instalação do app celular TANK-B  
-https://youtu.be/RkVB4FQm0Nw
-
-Digite /tutorial sempre que precisar rever.
-`;
-
-// ========================
-// FUNÇÃO TELEGRAM
-// ========================
 async function tg(method, body) {
   const res = await fetch(`${API}/${method}`, {
     method: "POST",
@@ -50,76 +29,94 @@ async function tg(method, body) {
   return data;
 }
 
-// ========================
-// ROOT
-// ========================
-app.get("/", (_, res) => res.status(200).send("ok"));
+function normalizeText(t) {
+  return (t || "").trim();
+}
 
-// ========================
-// WEBHOOK
-// ========================
+// aceita: "/tutorial", "/tutorial@Suporte_ir_bot", "tutorial", "Tutorial"
+function isCmd(text, cmd) {
+  const t = normalizeText(text).toLowerCase();
+
+  // caso 1: texto exatamente "tutorial"
+  if (t === cmd) return true;
+
+  // caso 2: "/tutorial" ou "/tutorial@bot"
+  if (t === `/${cmd}`) return true;
+  if (t.startsWith(`/${cmd}@`)) return true;
+
+  return false;
+}
+
+const TUTORIAL_TEXT = `🎓 CENTRAL DE TUTORIAIS TB-BASS IR (PC)
+
+📌 Instalação do M-Effects + Importar IR (PC) TANK-B (e outras pedaleiras)
+https://youtu.be/bKM6qGswkdw
+
+📌 Instalação do Cube Suite (PC) (CUBEBABY baixo e guitarra)
+https://youtu.be/o-BfRDqeFhs
+
+📌 Como importar IR pela DAW REAPER
+https://youtube.com/shorts/M37weIAi-CI?si=pOU3GhKIWnv8_fp1
+
+📌 Tutorial de instalação do app pro celular TANK-B (e outras pedaleiras)
+https://youtu.be/RkVB4FQm0Nw
+
+Digite /tutorial quando precisar rever ✅`;
+
+app.get("/", (_, res) => res.status(200).send("ok"));
+app.get("/version", (_, res) => res.status(200).send(BOT_VERSION));
+
 app.post("/webhook", async (req, res) => {
   try {
-    const message = req.body?.message;
-    if (!message || !message.text) {
+    const msg = req.body?.message;
+    if (!msg?.text) return res.sendStatus(200);
+
+    const chatId = msg.chat.id;
+    const text = normalizeText(msg.text);
+
+    console.log("BOT_VERSION:", BOT_VERSION, "chatId:", chatId, "text:", text);
+
+    // /start (e /start@bot)
+    if (isCmd(text, "start")) {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: `✅ Bot online!\n\nComandos:\n/start\n/tutorial\n/ping`,
+      });
       return res.sendStatus(200);
     }
 
-    const chatId = message.chat.id;
-    const text = message.text.trim().toLowerCase();
-
-    // ===== /start =====
-    if (text === "/start") {
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text: "✅ Bot online!\nComandos disponíveis:\n/start\n/ping\n/menu\n/tutorial"
-      });
-    }
-
-    // ===== /ping =====
-    else if (text === "/ping") {
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text: "pong 🟢"
-      });
-    }
-
-    // ===== /menu =====
-    else if (text === "/menu") {
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text: "Escolha uma opção:",
-        reply_markup: {
-          keyboard: [
-            [{ text: "/tutorial" }],
-            [{ text: "/ping" }]
-          ],
-          resize_keyboard: true
-        }
-      });
-    }
-
-    // ===== /tutorial =====
-    else if (text === "/tutorial" || text === "tutorial") {
+    // /tutorial (e /tutorial@bot) e também "tutorial"
+    if (isCmd(text, "tutorial")) {
       await tg("sendMessage", {
         chat_id: chatId,
         text: TUTORIAL_TEXT,
-        parse_mode: "Markdown"
+        disable_web_page_preview: false,
       });
+      return res.sendStatus(200);
     }
 
-    // NÃO responde mais "Recebi: ..."
-    // Se não for comando, ele ignora
+    // /ping
+    if (isCmd(text, "ping")) {
+      await tg("sendMessage", { chat_id: chatId, text: "pong 🟢" });
+      return res.sendStatus(200);
+    }
 
-    res.sendStatus(200);
-  } catch (error) {
-    console.error(error);
-    res.sendStatus(200);
+    // Se quiser: quando alguém digitar "suporte", responde no grupo:
+    if (normalizeText(text).toLowerCase() === "suporte") {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: "Nos chame no suporte oficial (privado) ✅",
+      });
+      return res.sendStatus(200);
+    }
+
+    // NÃO responde nada pro resto (pra não ficar spamando)
+    return res.sendStatus(200);
+  } catch (e) {
+    console.error("Webhook error:", e);
+    return res.sendStatus(200);
   }
 });
 
-// ========================
 const port = process.env.PORT || 8080;
-app.listen(port, () => {
-  console.log("Server running on port", port);
-});
+app.listen(port, () => console.log("Listening on", port, "version:", BOT_VERSION));
