@@ -5,6 +5,7 @@ const app = express();
 app.use(express.json());
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
 if (!TOKEN) {
   console.error("Missing TELEGRAM_BOT_TOKEN env var");
   process.exit(1);
@@ -20,27 +21,35 @@ async function tg(method, body) {
   });
 
   const data = await res.json();
-  if (!data.ok) throw new Error(JSON.stringify(data));
+  if (!data.ok) {
+    console.error("Telegram error:", data);
+    throw new Error(JSON.stringify(data));
+  }
+
   return data;
 }
 
-app.get("/", (_, res) => res.status(200).send("ok"));
+app.get("/", (_, res) => {
+  res.status(200).send("ok");
+});
 
 app.post("/webhook", async (req, res) => {
   try {
     const msg = req.body?.message;
-    if (!msg?.text) return res.sendStatus(200);
+    if (!msg || !msg.text) {
+      return res.sendStatus(200);
+    }
 
     const chatId = msg.chat.id;
-    const chatType = msg.chat.type;
-    const text = msg.text.trim().toUpperCase();
+    const chatType = msg.chat.type; // private, group, supergroup
+    const text = msg.text.trim().toLowerCase();
 
     // =========================
     // 🔹 GRUPO
     // =========================
     if (chatType === "group" || chatType === "supergroup") {
 
-      if (text === "TUTORIAL") {
+      if (text === "tutorial" || text === "/tutorial") {
 
         await tg("sendMessage", {
           chat_id: chatId,
@@ -63,7 +72,6 @@ https://youtu.be/RkVB4FQm0Nw
 💡 Digite <b>TUTORIAL</b> sempre que precisar rever.
           `
         });
-
       }
 
       return res.sendStatus(200);
@@ -74,35 +82,47 @@ https://youtu.be/RkVB4FQm0Nw
     // =========================
     if (chatType === "private") {
 
-      if (text === "/START") {
+      if (text === "/start") {
         await tg("sendMessage", {
           chat_id: chatId,
-          text: "✅ SUPORTE TB-BASS IR\nDigite /menu"
+          text: "✅ Bot online!\nComandos disponíveis:\n/start\n/ping\n/menu"
         });
-      }
 
-      if (text === "/MENU") {
+      } else if (text === "/ping") {
         await tg("sendMessage", {
           chat_id: chatId,
-          text: "Escolha:",
+          text: "pong 🟢"
+        });
+
+      } else if (text === "/menu") {
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text: "Escolha uma opção:",
           reply_markup: {
             keyboard: [
-              [{ text: "📦 Produtos" }],
-              [{ text: "💬 Suporte" }]
+              [{ text: "📦 Produtos" }, { text: "💬 Suporte" }]
             ],
             resize_keyboard: true
           }
+        });
+
+      } else {
+        await tg("sendMessage", {
+          chat_id: chatId,
+          text: `Recebi: ${msg.text}`
         });
       }
     }
 
     res.sendStatus(200);
 
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error("Webhook error:", error);
     res.sendStatus(200);
   }
 });
 
 const port = process.env.PORT || 8080;
-app.listen(port, () => console.log("Listening on", port));
+app.listen(port, () => {
+  console.log("Server running on port", port);
+});
