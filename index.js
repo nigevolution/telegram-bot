@@ -1,39 +1,70 @@
+// index.js (CommonJS)
 const express = require("express");
+
 const app = express();
 app.use(express.json());
 
-// ====== ENV ======
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+// ====== CONFIG ======
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN; // secret no Cloud Run
 if (!TOKEN) {
-  console.error("Missing TELEGRAM_BOT_TOKEN env var");
-  process.exit(1);
+  console.error("ERRO: TELEGRAM_BOT_TOKEN não está definido.");
 }
 
-const API = `https://api.telegram.org/bot${TOKEN}`;
-const APP_VERSION = process.env.APP_VERSION || "dev";
-const BOT_USERNAME = process.env.BOT_USERNAME || "Suporte_ir_bot";
-
-// Supergrupo onde o /tutorial funciona
-const SUPERGROUP_ID = Number(process.env.SUPERGROUP_ID || "-1003363944827");
-
-// Site
+const SUPERGROUP_ID = Number(process.env.SUPERGROUP_ID || "-1003363944827"); // seu supergrupo
 const SITE_URL = process.env.SITE_URL || "https://tbbassir.com.br";
+const APP_VERSION = process.env.APP_VERSION || "dev";
 
-// ====== Telegram helper ======
-async function tg(method, body) {
-  const res = await fetch(`${API}/${method}`, {
+// Se quiser validar o secret token do webhook (opcional):
+const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
+
+// ====== TELEGRAM HELPERS ======
+async function tg(method, payload) {
+  const url = `https://api.telegram.org/bot${TOKEN}/${method}`;
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   });
-  const data = await res.json();
-  if (!data.ok) throw new Error(JSON.stringify(data));
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.ok) {
+    console.error("Telegram API error:", method, res.status, data);
+  }
   return data;
 }
 
-// ====== Messages ======
-const TUTORIAL_TEXT =
-`📌 *CENTRAL DE TUTORIAIS TB-BASS IR (PC)*
+async function sendMessage(chat_id, text, extra = {}) {
+  return tg("sendMessage", {
+    chat_id,
+    text,
+    ...extra,
+  });
+}
+
+// ====== KEYBOARDS ======
+function privateReplyKeyboard() {
+  // Observação importante:
+  // - Botão de "web_app" abre URL em clientes que suportam (geralmente mobile).
+  // - No desktop, pode aparecer apenas como botão normal (enviando o texto).
+  return {
+    keyboard: [
+      [
+        {
+          text: "🌐 Site",
+          web_app: { url: SITE_URL },
+        },
+        { text: "💬 Suporte" },
+      ],
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false,
+  };
+}
+
+// ====== TUTORIAL TEXT (o mesmo do seu print) ======
+function tutorialText() {
+  return (
+`📌 CENTRAL DE TUTORIAIS TB-BASS IR (PC)
 
 Instalação do M-Effects + Importar IR (PC) TANK-B entre outras pedaleiras
 https://youtu.be/bKM6qGswkdw
@@ -45,187 +76,130 @@ Como importar IR pela DAW REAPER
 https://youtube.com/shorts/M37weIAi-CI?si=pOU3GhKIWnv8_fp1
 
 Tutorial de instalação do app pra celular TANK-B entre outras pedaleiras
-https://youtu.be/RkVB4FQm0Nw
+https://youtu.be/RkVB4FQmONw
 
-Digite *TUTORIAL* sempre que precisar rever.`;
-
-function mainReplyKeyboard() {
-  // Esse é o teclado de baixo (reply keyboard)
-  // NÃO abre URL direto; ele envia texto pro bot.
-  return {
-    keyboard: [
-      [{ text: "📌 Tutorial" }, { text: "🌐 Site" }],
-      [{ text: "💬 Suporte" }],
-    ],
-    resize_keyboard: true,
-  };
+Digite TUTORIAL sempre que precisar rever.`
+  );
 }
 
-function siteInlineKeyboard() {
-  // Esse sim abre URL (inline keyboard)
-  return {
-    inline_keyboard: [[{ text: "🌐 Abrir site TB-BASS IR", url: SITE_URL }]],
-  };
-}
+// ====== ROUTES ======
+app.get("/", (req, res) => {
+  res.status(200).send("OK");
+});
 
-function normalizeText(s) {
-  return (s || "").trim().toLowerCase();
-}
+app.get("/health", (req, res) => {
+  res.status(200).json({ ok: true, status: "healthy", version: APP_VERSION });
+});
 
-function isPrivate(chat) {
-  return chat?.type === "private";
-}
+app.get("/version", (req, res) => {
+  res.status(200).json({ ok: true, version: APP_VERSION });
+});
 
-function isMySupergroup(chat) {
-  return (chat?.type === "supergroup" || chat?.type === "group") && Number(chat?.id) === SUPERGROUP_ID;
-}
-
-async function sendMenu(chatId, text = "Escolha uma opção:") {
-  await tg("sendMessage", {
-    chat_id: chatId,
-    text,
-    reply_markup: mainReplyKeyboard(),
-  });
-}
-
-async function sendTutorialToSupergroup(chatId) {
-  // manda como Markdown pra ficar bonito
-  await tg("sendMessage", {
-    chat_id: chatId,
-    text: TUTORIAL_TEXT,
-    parse_mode: "Markdown",
-    disable_web_page_preview: false,
-  });
-}
-
-async function sendPrivateSupportHint(chatId) {
-  await sendMenu(chatId, "💬 Me diga sua dúvida aqui no privado.\nSe quiser ver os tutoriais: /tutorial");
-}
-
-// ====== Health endpoints (Cloud Run) ======
-app.get("/", (_, res) => res.status(200).send("ok"));
-app.get("/health", (_, res) => res.status(200).json({ ok: true }));
-app.get("/version", (_, res) =>
-  res.status(200).json({ app_version: APP_VERSION, bot_username: BOT_USERNAME, supergroup_id: SUPERGROUP_ID })
-);
-
-// ====== Webhook ======
+// Webhook (Telegram vai POSTAR aqui)
 app.post("/webhook", async (req, res) => {
   try {
-    const msg = req.body?.message;
-    if (!msg) return res.sendStatus(200);
+    // Validação opcional do secret do webhook
+    if (WEBHOOK_SECRET) {
+      const incoming = req.get("x-telegram-bot-api-secret-token") || "";
+      if (incoming !== WEBHOOK_SECRET) {
+        return res.status(401).send("Unauthorized");
+      }
+    }
 
-    const chatId = msg.chat?.id;
+    const update = req.body;
+
+    // Responde rápido pro Telegram não reenviar
+    res.status(200).send("OK");
+
+    const msg = update.message;
+    if (!msg) return;
+
     const chat = msg.chat;
-    const textRaw = msg.text || msg.caption || "";
-    const text = normalizeText(textRaw);
+    const chatId = chat.id;
+    const chatType = chat.type; // "private", "group", "supergroup"
+    const textRaw = (msg.text || "").trim();
+    const text = textRaw.toLowerCase();
 
-    // Só processa texto
-    if (!chatId || !textRaw) return res.sendStatus(200);
+    // ========= REGRAS DO SEU BOT =========
+    // 1) No SUPERGRUPO: só responder tutorial (comando ou palavra)
+    // 2) No PRIVADO: responder start/menu e botões; tutorial NÃO manda links no privado
 
-    // ====== Comandos /start /menu /ping ======
-    if (text === "/start") {
-      if (isPrivate(chat)) {
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: "✅ Bot online!\nComandos: /start /ping /menu /tutorial",
-        });
-        await sendMenu(chatId);
-      } else {
-        // no grupo: só confirma que tá vivo (sem floodar)
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: "✅ Bot online no grupo! Use /tutorial (somente no supergrupo oficial).",
-        });
-      }
-      return res.sendStatus(200);
-    }
+    const isSupergroupAllowed = chatId === SUPERGROUP_ID;
+    const isPrivate = chatType === "private";
 
-    if (text === "/ping") {
-      await tg("sendMessage", { chat_id: chatId, text: "pong 🟢" });
-      return res.sendStatus(200);
-    }
+    // --- Comandos (com / e também quando usuário digita "tutorial") ---
+    const isCmdStart = text.startsWith("/start");
+    const isCmdMenu = text.startsWith("/menu");
+    const isCmdTutorial = text.startsWith("/tutorial") || text === "tutorial";
 
-    if (text === "/menu") {
-      await sendMenu(chatId);
-      return res.sendStatus(200);
-    }
+    // ===== SUPERGRUPO =====
+    if (!isPrivate) {
+      // se não for o seu supergrupo, ignora tudo
+      if (!isSupergroupAllowed) return;
 
-    // ====== Tutorial ======
-    // Aceita: /tutorial ou "tutorial" ou botão "📌 Tutorial"
-    const wantsTutorial =
-      text === "/tutorial" || text === "tutorial" || text === "📌 tutorial" || text === "📌tutorial";
-
-    if (wantsTutorial) {
-      // Só libera no supergrupo específico
-      if (isMySupergroup(chat)) {
-        await sendTutorialToSupergroup(chatId);
-      } else {
-        // privado ou outro grupo: não manda os links completos
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text:
-            "📌 Os tutoriais ficam *apenas* no supergrupo oficial.\n" +
-            "Entre no grupo e use /tutorial lá.\n\n" +
-            "Se precisar, clique no site:",
-          parse_mode: "Markdown",
-          reply_markup: siteInlineKeyboard(),
+      // no seu supergrupo, só tutorial
+      if (isCmdTutorial) {
+        await sendMessage(chatId, tutorialText(), {
+          disable_web_page_preview: false,
         });
       }
-      return res.sendStatus(200);
+      return;
     }
 
-    // ====== Botão Site (reply keyboard) ======
-    // Quando clicar "🌐 Site", o bot responde com inline button que abre o site.
-    const wantsSite = text === "site" || text === "🌐 site" || text === "🌐site";
-    if (wantsSite) {
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text: "🌐 Site oficial TB-BASS IR:",
-        reply_markup: siteInlineKeyboard(),
+    // ===== PRIVADO =====
+    // /start ou /menu => mostra teclado com Site/Suporte
+    if (isCmdStart || isCmdMenu) {
+      await sendMessage(
+        chatId,
+        `✅ Bot online!\n\n📌 Site: ${SITE_URL}\n💬 Suporte: me diga sua dúvida aqui no privado.\n\nSe quiser ver os tutoriais do grupo: /tutorial`,
+        {
+          reply_markup: privateReplyKeyboard(),
+          disable_web_page_preview: true,
+        }
+      );
+      return;
+    }
+
+    // /tutorial no privado => NÃO manda os links; orienta usar no grupo
+    if (isCmdTutorial) {
+      await sendMessage(
+        chatId,
+        `📌 Os tutoriais ficam apenas no supergrupo.\n\n👉 Vá no grupo e digite: /tutorial\n\nSite: ${SITE_URL}`,
+        { disable_web_page_preview: true }
+      );
+      return;
+    }
+
+    // Botões do teclado no privado
+    if (textRaw === "💬 Suporte" || text === "suporte") {
+      await sendMessage(chatId, "💬 Me diga sua dúvida aqui no privado que eu te ajudo.");
+      return;
+    }
+
+    if (textRaw === "🌐 Site" || text === "site") {
+      await sendMessage(chatId, `🌐 Nosso site: ${SITE_URL}`, {
+        disable_web_page_preview: false,
       });
-      return res.sendStatus(200);
+      return;
     }
 
-    // ====== Botão Suporte ======
-    const wantsSupport = text === "suporte" || text === "💬 suporte" || text === "💬suporte";
-    if (wantsSupport) {
-      if (isPrivate(chat)) {
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: "💬 Pode mandar sua dúvida aqui no privado. Vou te responder por aqui.",
-        });
-      } else {
-        // no grupo: pede pra chamar no privado
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: `💬 Para suporte, me chame no privado: @${BOT_USERNAME}`,
-        });
-      }
-      return res.sendStatus(200);
-    }
-
-    // ====== Se for privado: mantém um comportamento útil ======
-    if (isPrivate(chat)) {
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text:
-          "✅ Mensagem recebida!\n" +
-          "Me diga sua dúvida aqui no privado.\n\n" +
-          "Menu: /menu",
-        reply_markup: mainReplyKeyboard(),
-      });
-      return res.sendStatus(200);
-    }
-
-    // ====== Se for grupo (não responde tudo pra não floodar) ======
-    // ignora por padrão
-    return res.sendStatus(200);
-  } catch (e) {
-    console.error("webhook error:", e);
-    return res.sendStatus(200);
+    // Resposta padrão no privado (você pode trocar aqui depois)
+    await sendMessage(
+      chatId,
+      "Me diga sua dúvida aqui no privado.\n\n📌 Comandos:\n/start\n/menu\n/tutorial (tutoriais só no grupo)",
+      { reply_markup: privateReplyKeyboard() }
+    );
+  } catch (err) {
+    console.error("Webhook error:", err);
+    // se der erro, ainda assim não pode travar o webhook
+    try {
+      res.status(200).send("OK");
+    } catch (_) {}
   }
 });
 
-const port = process.env.PORT || 8080;
-app.listen(port, () => console.log("Listening on", port, "version:", APP_VERSION));
+// ====== START SERVER ======
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT} | version=${APP_VERSION}`);
+});
