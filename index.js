@@ -1,11 +1,12 @@
 const express = require("express");
-const app = express();
+const fetch = require("node-fetch");
 
+const app = express();
 app.use(express.json());
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 if (!TOKEN) {
-  console.error("Missing TELEGRAM_BOT_TOKEN");
+  console.error("Missing TELEGRAM_BOT_TOKEN env var");
   process.exit(1);
 }
 
@@ -17,6 +18,7 @@ async function tg(method, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
   const data = await res.json();
   if (!data.ok) {
     console.error("Telegram error:", data);
@@ -24,109 +26,77 @@ async function tg(method, body) {
   return data;
 }
 
-app.get("/", (_, res) => res.status(200).send("ok"));
+app.get("/", (_, res) => {
+  res.status(200).send("BOT ONLINE ✅");
+});
 
 app.post("/webhook", async (req, res) => {
   try {
-    const message = req.body?.message;
-    if (!message?.text) return res.sendStatus(200);
+    const msg = req.body?.message;
+    if (!msg || !msg.text) {
+      return res.sendStatus(200);
+    }
 
-    const chatId = message.chat.id;
-    const chatType = message.chat.type; // private, group, supergroup
-    const text = message.text.trim().toLowerCase();
+    const chatId = msg.chat.id;
+    const chatType = msg.chat.type; // private, group, supergroup
+    const text = msg.text.trim().toLowerCase();
 
-    // =========================
-    // 📌 COMANDO TUTORIAL (GRUPO)
-    // =========================
-    if (
-      text === "/tutorial" ||
-      text === "tutorial"
-    ) {
-      const tutorialMessage = `🎓 CENTRAL DE TUTORIAIS TB-BASS IR (PC)
+    // ===============================
+    // COMANDO TUTORIAL
+    // ===============================
+    if (text === "/tutorial" || text === "tutorial") {
 
-📌 Instalação do M-Effects + Importar IR (PC) TANK-B
+      const tutorialMessage = `
+🎓 *CENTRAL DE TUTORIAIS TB-BASS IR (PC)*
+
+📌 Instalação do M-Effects + Importar IR (PC)  
 https://youtu.be/bKM6qGswkdw
 
-📌 Instalação do Cube Suite (PC)
+📌 Instalação do Cube Suite (PC)  
 https://youtu.be/o-BfRDqeFhs
 
-📌 Como importar IR pela DAW REAPER
-https://youtube.com/shorts/M37welAi-CI?si=pOU3GhKIWnv8_fp1
+📌 Como importar IR pela DAW REAPER  
+https://youtube.com/shorts/M37weIAi-CI?si=pOU3GhKIWnv8_fp1
 
-📌 Tutorial de instalação do app para celular TANK-B
-https://youtu.be/RkVB4FQm0Nw`;
+📌 Tutorial de instalação do app TANK-B (Celular)  
+https://youtu.be/RkVB4FQm0Nw
+
+Digite TUTORIAL sempre que precisar rever.
+`;
 
       await tg("sendMessage", {
         chat_id: chatId,
         text: tutorialMessage,
-        disable_web_page_preview: false
+        parse_mode: "Markdown"
       });
 
       return res.sendStatus(200);
     }
 
-    // =========================
-    // 📌 COMANDOS NO PRIVADO
-    // =========================
-    if (chatType === "private") {
+    // ===============================
+    // COMANDO START (SÓ PRIVADO)
+    // ===============================
+    if (text === "/start" && chatType === "private") {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text: "✅ Bot online!\nUse /tutorial para ver os tutoriais."
+      });
 
-      if (text === "/start") {
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: `✅ Bot online!
-
-Comandos disponíveis:
-/start
-/ping
-/tutorial`
-        });
-      }
-
-      else if (text === "/ping") {
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: "pong 🟢"
-        });
-      }
-
-      else if (text === "/tutorial") {
-        const tutorialMessage = `🎓 CENTRAL DE TUTORIAIS TB-BASS IR (PC)
-
-📌 Instalação do M-Effects + Importar IR (PC) TANK-B
-https://youtu.be/bKM6qGswkdw
-
-📌 Instalação do Cube Suite (PC)
-https://youtu.be/o-BfRDqeFhs
-
-📌 Como importar IR pela DAW REAPER
-https://youtube.com/shorts/M37welAi-CI?si=pOU3GhKIWnv8_fp1
-
-📌 Tutorial de instalação do app para celular TANK-B
-https://youtu.be/RkVB4FQm0Nw`;
-
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: tutorialMessage
-        });
-      }
-
-      else {
-        await tg("sendMessage", {
-          chat_id: chatId,
-          text: "Comando não reconhecido."
-        });
-      }
+      return res.sendStatus(200);
     }
 
-    res.sendStatus(200);
+    // ===============================
+    // NÃO RESPONDER OUTROS TEXTOS
+    // ===============================
+    return res.sendStatus(200);
 
   } catch (err) {
-    console.error("Webhook error:", err);
-    res.sendStatus(200);
+    console.error(err);
+    return res.sendStatus(200);
   }
 });
 
 const port = process.env.PORT || 8080;
 app.listen(port, () => {
-  console.log("Server running on port", port);
+  console.log("Listening on port", port);
 });
