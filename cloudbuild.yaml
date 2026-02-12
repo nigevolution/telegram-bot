@@ -25,6 +25,6 @@ steps:
       - "managed"
       - "--allow-unauthenticated"
       - "--set-env-vars"
-      - "APP_VERSION=$COMMIT_SHA,BOT_USERNAME=Suporte_ir_bot,SUPERGROUP_ID=-1003363944827,SITE_URL=https://tbbassir.com.br"
+      - "APP_VERSION=$COMMIT_SHA,SUPERGROUP_ID=-1003363944827,SITE_URL=https://tbbassir.com.br"
       - "--set-secrets"
       - "TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest"
