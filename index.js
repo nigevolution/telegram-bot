@@ -11,7 +11,7 @@ if (!BOT_TOKEN) {
 const bot = new Telegraf(BOT_TOKEN);
 const app = express();
 
-app.use(bot.webhookCallback('/bot'));
+app.use(express.json());
 
 /*
 |--------------------------------------------------------------------------
@@ -26,13 +26,12 @@ bot.start(async (ctx) => {
       Markup.button.url('🌐 Site Oficial', 'https://tbbassir.com.br')
     ],
     [
-      Markup.button.url('🛠 Suporte', 'https://t.me/SEU_SUPORTE_AQUI')
+      Markup.button.url('🛠 Suporte', 'https://t.me/Suporte_ir_bot')
     ]
   ]);
 
-  // 👉 Se for o supergrupo
+  // SUPERGRUPO
   if (ctx.chat.id == SUPERGRUPO_ID) {
-
     return ctx.reply(
       '📘 Tutorial Oficial TB Bass IR:\n\n' +
       '1️⃣ Baixe o arquivo\n' +
@@ -43,9 +42,8 @@ bot.start(async (ctx) => {
     );
   }
 
-  // 👉 Se for privado
+  // PRIVADO
   if (ctx.chat.type === 'private') {
-
     return ctx.reply(
       '👋 Bem-vindo ao suporte TB Bass IR.\n\n' +
       'Escolha uma opção abaixo:',
@@ -55,34 +53,42 @@ bot.start(async (ctx) => {
 
 });
 
-
 /*
 |--------------------------------------------------------------------------
-| RESPOSTAS PRIVADAS PERSONALIZADAS
+| RESPOSTAS PRIVADAS
 |--------------------------------------------------------------------------
 */
 
 bot.on('text', async (ctx) => {
 
-  // Só responde texto no privado
   if (ctx.chat.type !== 'private') return;
 
   const texto = ctx.message.text.toLowerCase();
 
   if (texto.includes('preço')) {
-    return ctx.reply('💰 Os valores estão disponíveis no site oficial:\nhttps://tbbassir.com.br');
+    return ctx.reply('💰 Valores disponíveis em:\nhttps://tbbassir.com.br');
   }
 
   if (texto.includes('ir')) {
-    return ctx.reply('🎸 Nossos IRs são capturados com máxima fidelidade profissional.');
+    return ctx.reply('🎸 Nossos IRs são capturados com fidelidade profissional.');
   }
 
 });
 
+/*
+|--------------------------------------------------------------------------
+| WEBHOOK ROUTE
+|--------------------------------------------------------------------------
+*/
+
+app.post('/bot', (req, res) => {
+  bot.handleUpdate(req.body);
+  res.sendStatus(200);
+});
 
 /*
 |--------------------------------------------------------------------------
-| SERVIDOR CLOUD RUN
+| CLOUD RUN SERVER
 |--------------------------------------------------------------------------
 */
 
@@ -94,4 +100,10 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, async () => {
   console.log(`Servidor rodando na porta ${PORT}`);
+
+  const WEBHOOK_URL = process.env.K_SERVICE
+    ? `https://${process.env.K_SERVICE}-${process.env.GOOGLE_CLOUD_PROJECT}.uc.r.appspot.com/bot`
+    : null;
+
+  console.log('Servidor pronto.');
 });
