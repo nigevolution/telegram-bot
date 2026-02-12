@@ -11,5 +11,7 @@
     - --platform
     - managed
     - --allow-unauthenticated
+    - --service-account
+    - cloudrun-sa@nigevolution.iam.gserviceaccount.com
     - --set-secrets
     - TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest
