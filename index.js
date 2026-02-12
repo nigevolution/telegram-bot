@@ -1,62 +1,86 @@
 "use strict";
 
 const express = require("express");
-const app = express();
-app.use(express.json({ limit: "1mb" }));
 
-// ===== CONFIG =====
+const app = express();
+// Telegram manda JSON
+app.use(express.json({ type: "*/*" }));
+
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 if (!TOKEN) {
   console.error("Missing TELEGRAM_BOT_TOKEN env var");
   process.exit(1);
 }
 
-const BOT_VERSION = process.env.BOT_VERSION || "v1";
 const API = `https://api.telegram.org/bot${TOKEN}`;
 
-// ===== FETCH (global fetch on Node 18+; fallback to node-fetch if needed) =====
-async function getFetch() {
-  if (typeof fetch === "function") return fetch;
-  const mod = await import("node-fetch");
-  return mod.default;
-}
+let BOT_USERNAME = process.env.BOT_USERNAME || ""; // opcional; vamos tentar descobrir sozinho
 
 async function tg(method, body) {
-  const _fetch = await getFetch();
-  const res = await _fetch(`${API}/${method}`, {
+  const res = await fetch(`${API}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body ?? {}),
   });
-
-  const data = await res.json().catch(() => ({}));
-  if (!data || data.ok !== true) {
-    throw new Error(
-      `Telegram API error on ${method}: ${JSON.stringify(data)}`
-    );
+  const data = await res.json().catch(() => null);
+  if (!data || !data.ok) {
+    throw new Error(`Telegram API error on ${method}: ${JSON.stringify(data)}`);
   }
-  return data;
+  return data.result;
 }
 
-// ===== TUTORIAL MESSAGE (SEUS LINKS) =====
-const TUTORIAL_TEXT =
-  "🧰 *CENTRAL DE TUTORIAIS TB-BASS IR (PC)*\n\n" +
-  "*Instalação do M-Effects + Importar IR (PC) TANK-B* (entre outras pedaleiras)\n" +
-  "https://youtu.be/bKM6qGswkdw\n\n" +
-  "*Instalação do Cube Suite (PC)* (apenas para pedaleiras CUBEBABY, baixo e guitarra)\n" +
-  "https://youtu.be/o-BfRDqeFhs\n\n" +
-  "*Como importar IR pela DAW REAPER*\n" +
-  "https://youtube.com/shorts/M37welAi-CI?si=pOU3GhKIWnv8_fp1\n\n" +
-  "*Tutorial de instalação do app pra celular TANK-B* (entre outras pedaleiras)\n" +
-  "https://youtu.be/RkVB4FQmONw\n\n" +
-  "✅ *Digite* /tutorial *sempre que precisar rever.*";
+async function initBot() {
+  try {
+    const me = await tg("getMe", {});
+    if (me?.username) {
+      BOT_USERNAME = me.username; // ex: "Suporte_ir_bot"
+      console.log("BOT_USERNAME detected:", BOT_USERNAME);
+    }
+  } catch (e) {
+    console.warn("Could not auto-detect BOT_USERNAME:", e?.message || e);
+  }
+}
 
-// ===== HELPERS =====
-function normalizeText(text) {
-  return String(text || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
+function normalizeText(t) {
+  return (t || "").trim();
+}
+
+function parseCommand(textRaw) {
+  // Aceita:
+  // "/start", "/start@MeuBot", "/tutorial", "/tutorial@MeuBot"
+  // e também "tutorial" (sem /)
+  const text = normalizeText(textRaw);
+  if (!text) return { kind: "none" };
+
+  const lower = text.toLowerCase();
+
+  // comando com "/"
+  if (text.startsWith("/")) {
+    // pega só primeiro token
+    const first = text.split(/\s+/)[0]; // "/tutorial@bot"
+    // remove "/"
+    let cmd = first.slice(1);
+
+    // remove "@username" se vier
+    if (cmd.includes("@")) {
+      const [base, atUser] = cmd.split("@");
+      cmd = base;
+      // se quiser, valida se atUser bate com BOT_USERNAME (opcional)
+      // (não travo se diferente, só ignoro)
+    } else if (BOT_USERNAME) {
+      // alguns clientes podem mandar "/cmd@Bot" em outro campo, mas aqui já tratamos
+    }
+
+    return { kind: "command", cmd: cmd.toLowerCase(), raw: text };
+  }
+
+  // “comando” sem slash (ex: "tutorial")
+  if (lower === "tutorial") return { kind: "command", cmd: "tutorial", raw: text };
+  if (lower === "menu") return { kind: "command", cmd: "menu", raw: text };
+  if (lower === "ping") return { kind: "command", cmd: "ping", raw: text };
+  if (lower === "start") return { kind: "command", cmd: "start", raw: text };
+
+  return { kind: "text", text };
 }
 
 function isGroupChat(chat) {
@@ -64,158 +88,136 @@ function isGroupChat(chat) {
   return t === "group" || t === "supergroup";
 }
 
-async function sendText(chatId, text, extra = {}) {
-  return tg("sendMessage", {
+function tutorialMessage() {
+  // Mensagem igual seu print (texto + links)
+  return [
+    "🎓 *CENTRAL DE TUTORIAIS TB-BASS IR (PC)*",
+    "",
+    "Instalação do M-Effects + Importar IR (PC) TANK-B entre outras pedaleiras",
+    "https://youtu.be/bKM6qGswkdw",
+    "",
+    "Instalação do Cube Suite (PC) apenas para as pedaleiras CUBEBABY tanto como pedaleira de baixo e guitarra",
+    "https://youtu.be/o-BfRDqeFhs",
+    "",
+    "Como importar IR pela DAW REAPER",
+    "https://youtube.com/shorts/M37welAi-CI?si=pOU3GhKIWnv8_fp1",
+    "",
+    "Tutorial de instalação do app pra celular TANK-B entre outras pedaleiras",
+    "https://youtu.be/RkVB4FQmONw",
+    "",
+    "Digite /tutorial sempre que precisar rever.",
+  ].join("\n");
+}
+
+async function sendStart(chatId) {
+  await tg("sendMessage", {
     chat_id: chatId,
-    text,
-    ...extra,
+    text: "✅ Bot online!\nComandos: /start /ping /menu /tutorial",
   });
 }
 
-async function sendTutorial(chatId) {
-  return sendText(chatId, TUTORIAL_TEXT, {
-    parse_mode: "Markdown",
-    disable_web_page_preview: false,
-  });
-}
-
-async function showMenu(chatId) {
-  return sendText(chatId, "Escolha uma opção:", {
+async function sendMenu(chatId) {
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text: "Escolha uma opção:",
     reply_markup: {
-      keyboard: [[{ text: "📚 Tutoriais" }, { text: "💬 Suporte" }]],
+      keyboard: [[{ text: "📦 Produtos" }, { text: "💬 Suporte" }]],
       resize_keyboard: true,
-      one_time_keyboard: false,
     },
   });
 }
 
-// ===== ROUTES =====
+async function sendTutorial(chatId) {
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text: tutorialMessage(),
+    parse_mode: "Markdown",
+    // NÃO desabilita preview pra aparecer igual seu print:
+    // disable_web_page_preview: false,
+  });
+}
+
+async function handlePrivateMessage(msg) {
+  const chatId = msg.chat.id;
+  const cmd = parseCommand(msg.text);
+
+  if (cmd.kind === "command") {
+    if (cmd.cmd === "start") return sendStart(chatId);
+    if (cmd.cmd === "ping") return tg("sendMessage", { chat_id: chatId, text: "pong 🟢" });
+    if (cmd.cmd === "menu") return sendMenu(chatId);
+    if (cmd.cmd === "tutorial") return sendTutorial(chatId);
+  }
+
+  // botões do menu
+  const t = normalizeText(msg.text);
+  if (t === "📦 Produtos") {
+    return tg("sendMessage", { chat_id: chatId, text: "📦 Produtos: em breve vou colocar o catálogo aqui." });
+  }
+  if (t === "💬 Suporte") {
+    return tg("sendMessage", { chat_id: chatId, text: "💬 Suporte: me diga sua dúvida aqui no privado." });
+  }
+
+  // fallback
+  return tg("sendMessage", { chat_id: chatId, text: `Recebi: ${t}` });
+}
+
+async function handleGroupMessage(msg) {
+  const chatId = msg.chat.id;
+  const cmd = parseCommand(msg.text);
+
+  // No grupo, só respondemos comandos principais:
+  if (cmd.kind === "command") {
+    if (cmd.cmd === "start") return sendStart(chatId);
+    if (cmd.cmd === "ping") return tg("sendMessage", { chat_id: chatId, text: "pong 🟢" });
+    if (cmd.cmd === "menu") return sendMenu(chatId); // se você quiser menu no grupo também
+    if (cmd.cmd === "tutorial") return sendTutorial(chatId);
+  }
+
+  // Se não for comando, a ideia é separar:
+  // Grupo = tutoriais; privado = suporte.
+  // Então no grupo só orienta a chamar no privado.
+  return tg("sendMessage", {
+    chat_id: chatId,
+    text: "💬 Para suporte, fale comigo no privado (clique no meu perfil e envie /start).",
+  });
+}
+
 app.get("/", (_, res) => res.status(200).send("ok"));
 
-app.get("/version", (_, res) => res.status(200).send(BOT_VERSION));
+app.get("/version", (_, res) => {
+  res.json({
+    ok: true,
+    service: "telegram-bot",
+    version: process.env.VERSION || process.env.K_REVISION || "local",
+    bot_username: BOT_USERNAME || null,
+    now: new Date().toISOString(),
+  });
+});
 
-/**
- * Telegram Webhook endpoint
- * Configure webhook to: https://SEU_CLOUD_RUN_URL/webhook
- */
 app.post("/webhook", async (req, res) => {
-  // Sempre responde 200 pro Telegram não ficar re-tentando sem parar
-  res.sendStatus(200);
-
   try {
     const update = req.body || {};
 
-    // Pega mensagem normal ou posts (canal) se existir
-    const msg =
-      update.message ||
-      update.edited_message ||
-      update.channel_post ||
-      update.edited_channel_post;
-
-    // Se for clique em botão (se você usar inline keyboard no futuro)
-    const cb = update.callback_query;
-
-    if (cb?.message?.chat?.id) {
-      const chatId = cb.message.chat.id;
-      const data = normalizeText(cb.data);
-
-      if (data === "tutorial") await sendTutorial(chatId);
-      if (data === "menu") await showMenu(chatId);
-
-      // confirma o callback pro Telegram
-      await tg("answerCallbackQuery", { callback_query_id: cb.id });
-      return;
-    }
-
-    if (!msg?.chat?.id) return;
-
-    const chatId = msg.chat.id;
-    const chatType = msg.chat.type; // private | group | supergroup | channel
-    const isGroup = isGroupChat(msg.chat);
-
-    const rawText = msg.text || msg.caption || "";
-    const text = normalizeText(rawText);
-
-    // Comandos aceitos (com barra ou sem barra)
-    const isStart = text === "/start" || text === "start";
-    const isPing = text === "/ping" || text === "ping";
-    const isMenu = text === "/menu" || text === "menu";
-    const isTutorial = text === "/tutorial" || text === "tutorial";
-
-    // ===== REGRAS NO GRUPO (pra não virar spam) =====
-    if (isGroup) {
-      // No grupo, só responde comandos específicos
-      if (isStart) {
-        await sendText(
-          chatId,
-          "✅ Bot online!\nComandos: /start /ping /menu /tutorial"
-        );
-        return;
+    // Mensagem normal
+    const msg = update.message || update.edited_message;
+    if (msg && msg.text) {
+      if (isGroupChat(msg.chat)) {
+        await handleGroupMessage(msg);
+      } else {
+        await handlePrivateMessage(msg);
       }
-
-      if (isPing) {
-        await sendText(chatId, "pong 🟢");
-        return;
-      }
-
-      if (isMenu) {
-        await showMenu(chatId);
-        return;
-      }
-
-      if (isTutorial) {
-        // IMPORTANTÍSSIMO: manda no MESMO chat do grupo (usa chatId do update)
-        await sendTutorial(chatId);
-        return;
-      }
-
-      // Se não for comando, ignora no grupo (sem “Recebi…”)
-      return;
     }
 
-    // ===== PRIVADO =====
-    // Aqui ele pode conversar normalmente
-    if (isStart) {
-      await sendText(chatId, "✅ Bot online!\nComandos: /start /ping /menu /tutorial");
-      return;
-    }
-
-    if (isPing) {
-      await sendText(chatId, "pong 🟢");
-      return;
-    }
-
-    if (isMenu) {
-      await showMenu(chatId);
-      return;
-    }
-
-    if (isTutorial) {
-      await sendTutorial(chatId);
-      return;
-    }
-
-    // Botões do teclado (mensagens normais)
-    if (text === "📚 tutoriais") {
-      await sendTutorial(chatId);
-      return;
-    }
-
-    if (text === "💬 suporte") {
-      await sendText(
-        chatId,
-        "✅ Nos chame no suporte oficial.\nExplique seu problema aqui e envie prints/ vídeos se precisar."
-      );
-      return;
-    }
-
-    // Fallback (privado): só confirma o que recebeu
-    await sendText(chatId, `Recebi: ${rawText}`);
+    // Sempre 200 pro Telegram não ficar reenviando
+    res.sendStatus(200);
   } catch (e) {
-    console.error("Webhook error:", e?.message || e);
+    console.error("WEBHOOK ERROR:", e?.message || e);
+    res.sendStatus(200);
   }
 });
 
-// ===== SERVER =====
 const port = process.env.PORT || 8080;
-app.listen(port, () => console.log("Listening on", port, "version", BOT_VERSION));
+app.listen(port, async () => {
+  console.log("Listening on", port);
+  await initBot();
+});
